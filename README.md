@@ -206,6 +206,48 @@ Gemener versaliseras, eftersom BASIC bara förstår versaler.
 `SDL2.dll` läggs bredvid exe-filen av byggskriptet, så programmet går att köra
 utan MSYS2 i PATH.
 
+## 64 tecken per rad
+
+Originalet visar **48 tecken per rad, placerade med tolv kolumners marginal**
+inne i den 64 byte långa raden. Marginalen fanns för att en TV klippte bort
+kanterna. På HDMI finns ingen overscan, så de tolv kolumnerna är bortkastade.
+
+CEGMON håller sin skärmgeometri i **RAM** och kopierar dit den från en mall i
+ROM vid start:
+
+| Adress | Innehåll | Original | 64 kolumner |
+|--------|----------|----------|-------------|
+| `$0222` | radbredd minus 1 | 47 | 63 |
+| `$0223/24` | fönstrets start | `$D08C` | `$D000` |
+| `$0225/26` | nedersta radens start | `$D3CC` | `$D3C0` |
+
+Bygg en patchad monitor:
+
+```powershell
+python tools\patcha-cegmon64.py
+cd host
+.\uk101gui.exe --roms ..\roms64
+```
+
+Båda ROM-uppsättningarna finns kvar sida vid sida, så du väljer per program.
+
+**Radsteget i minnet är och förblir 64 byte.** Det är hela poängen med att
+stanna på 64 och inte gå till 80: program som pokar skärmen räknar på steget och
+fortsätter därför fungera. 80 tecken hade krävt 1280 byte skärm-RAM mot dagens
+1024, alltså antingen mer RAM eller färre rader, och då bryts steget.
+
+**Men program som hårdkodar det gamla fönstret ritar tolv kolumner fel.** Det är
+mätt, inte gissat: `passetemp.basic` har `O=54220`, alltså `$D3CC`, som med den
+nya geometrin ligger mitt i synlig text. Radens `POKEO,32` äter därför upp ett
+tecken:
+
+```
+Original:     _            HIT 'C' TO CONTINUE.
+64 kolumner:  _             IT 'C' TO CONTINUE.
+```
+
+Själva spelet går, men brädet ritas förskjutet. Det är priset.
+
 ## Ladda in och spara program
 
 UK101:ans "kassett" är ingen ljudinspelning utan ren ASCII genom ACIA:n på

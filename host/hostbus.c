@@ -190,18 +190,24 @@ void host_tape_eject(void)
 
 int host_load_program(const char *path)
 {
-    int varv;
-
     if (!host_tape_load(path)) return 0;
 
     host_type("LOAD");
     host_tap(UK101_KEY_RETURN, 0);
 
     /* Mata fram bandet. Det konsumeras i takt med att BASIC frågar efter
-     * tecken, så det är klart när bandet är slut. Taket är en säkring mot ett
-     * program som av någon anledning slutar läsa. */
-    for (varv = 0; varv < 400 && !uk101_tape_at_end(&host_mach); varv++)
-        host_run_cycles(MS(10));
+     * tecken, så det är klart när bandet är slut. Ett långt program tar lång
+     * tid, så tiden får inte vara taket. Istället ges upp först när bandet
+     * slutat röra sig, alltså när maskinen inte längre läser. */
+    {
+        uint32_t forra = host_mach.tape_pos;
+        int stillastaende = 0;
+        while (!uk101_tape_at_end(&host_mach) && stillastaende < 200) {
+            host_run_cycles(MS(10));
+            if (host_mach.tape_pos == forra) stillastaende++;
+            else { forra = host_mach.tape_pos; stillastaende = 0; }
+        }
+    }
 
     if (!uk101_tape_at_end(&host_mach)) {
         fprintf(stderr, "bandet lastes inte klart, %lu av %lu tecken kvar\n",

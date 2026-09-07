@@ -16,5 +16,7 @@
 *.elf
 *.uf2
 
+/roms64/
+
 # Genereras ur roms\*.rom av tools\rom2h.py
 /src/uk101_roms.h

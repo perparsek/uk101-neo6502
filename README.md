@@ -282,7 +282,16 @@ filen är byte-identisk med originalet och kör likadant när den läses in igen
 ## Masken
 
 `program\masken.bas` är ett spel skrivet för maskinen. Släpp filen på fönstret
-och skriv `RUN`. Styr med W A S D, rymden startar en ny omgång.
+och skriv `RUN`. **`S` svänger vänster, `D` svänger höger, ur maskens eget
+perspektiv** som i en riktig mask. Mellanslag startar en ny omgång.
+
+Ramen är ritad med teckengeneratorns blockgrafik (`$A1`), huvudet är en stor
+ring (`$E2`) och kroppen små `o`. Hela teckenuppsättningen finns renderad i
+[images/chargen.png](images/chargen.png) om du vill välja andra.
+
+Båda svängtangenterna ligger på rad 3 i tangentmatrisen, så en enda avläsning
+per varv räcker. Bara nytt nedslag svänger, annars hade en hållen tangent
+snurrat masken runt.
 
 Den läser skärmgeometrin ur CEGMON istället för att hårdkoda den, så samma fil
 fungerar på både 48- och 64-kolumnersmonitoren:

@@ -94,6 +94,61 @@ static int type_char(char ch)
     return 1;
 }
 
+/* ---- tangenter som halls nere ---------------------------------------- */
+
+/* Bokstaver, siffror och mellanslag halls nere sa lange den fysiska tangenten
+ * ar nere, istallet for att tryckas i 40 millisekunder.
+ *
+ * Ett program som pollar tangentmatrisen sjalvt hinner annars aldrig se dem.
+ * En spelslinga i BASIC tar over hundra millisekunder per varv och laser
+ * matrisen bara ett ogonblick av den tiden, sa en kort tryckning faller
+ * mellan tva avlasningar. Det ar ocksa vad en riktig tangent gor: den ligger
+ * nere tills man slapper den.
+ *
+ * Skiljetecken gar fortfarande genom textinmatningen, for dar behovs
+ * tangentbordslayouten. Bokstaver och siffror har samma plats i alla
+ * layouter, sa for dem racker scankoden. */
+static uint8_t held[512];    /* matrisposition + 1 per SDL-scankod */
+
+static int sym_to_char(SDL_Keycode sym)
+{
+    if (sym >= SDLK_a && sym <= SDLK_z) return 'A' + (sym - SDLK_a);
+    if (sym >= SDLK_0 && sym <= SDLK_9) return '0' + (sym - SDLK_0);
+    if (sym == SDLK_SPACE)              return ' ';
+    return 0;
+}
+
+static void key_down(const SDL_KeyboardEvent *k)
+{
+    int ch = sym_to_char(k->keysym.sym);
+    uint8_t kc;
+    unsigned sc = (unsigned)k->keysym.scancode;
+    if (!ch || sc >= 512 || k->repeat) return;
+    kc = uk101_ascii_key[ch];
+    if (!UK101_KC_IS_VALID(kc)) return;
+    held[sc] = (uint8_t)(UK101_KC_POS(kc) + 1);
+    uk101_key_set(&host_mach, UK101_KC_POS(kc), 1);
+}
+
+static void key_up(const SDL_KeyboardEvent *k)
+{
+    unsigned sc = (unsigned)k->keysym.scancode;
+    if (sc >= 512 || !held[sc]) return;
+    uk101_key_set(&host_mach, (uint8_t)(held[sc] - 1), 0);
+    held[sc] = 0;
+}
+
+/* Tappar fonstret fokus kommer ingen KEYUP, sa allt slapps. */
+static void release_all(void)
+{
+    unsigned sc;
+    for (sc = 0; sc < 512; sc++)
+        if (held[sc]) {
+            uk101_key_set(&host_mach, (uint8_t)(held[sc] - 1), 0);
+            held[sc] = 0;
+        }
+}
+
 /* ---- spara det inspelade -------------------------------------------- */
 
 /* Inget filväljardialog, så filnamnet räknas upp: uk101-001.bas och framåt.
@@ -176,11 +231,28 @@ static int interactive(void)
                 running = 0;
                 break;
 
+            /* Bara skiljetecken hit. Bokstaver, siffror och mellanslag
+             * hanteras av key_down och key_up, som haller dem nere. */
             case SDL_TEXTINPUT: {
                 const char *p;
-                for (p = e.text.text; *p; p++) type_char(*p);
+                for (p = e.text.text; *p; p++) {
+                    char c = *p;
+                    if (c >= 'a' && c <= 'z') continue;
+                    if (c >= 'A' && c <= 'Z') continue;
+                    if (c >= '0' && c <= '9') continue;
+                    if (c == ' ') continue;
+                    type_char(c);
+                }
                 break;
             }
+
+            case SDL_KEYUP:
+                key_up(&e.key);
+                break;
+
+            case SDL_WINDOWEVENT:
+                if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) release_all();
+                break;
 
             /* Slapper man en fil pa fonstret gor den hela originalets manover:
              * LOAD, mata fram bandet, RESET och varmstart. Efterat star
@@ -202,6 +274,7 @@ static int interactive(void)
             }
 
             case SDL_KEYDOWN:
+                key_down(&e.key);
                 switch (e.key.keysym.sym) {
                 case SDLK_RETURN:
                 case SDLK_KP_ENTER:

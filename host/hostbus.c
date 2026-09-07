@@ -370,6 +370,26 @@ int host_command(const char *cmd)
         host_tap(pos, shift);
     } else if (strcmp(cmd, "boot") == 0) {
         host_cold_start_basic();
+    } else if (strncmp(cmd, "hold:", 5) == 0) {
+        /* Haller en tangent nere en angiven tid. Behovs for att prova program
+         * som laser tangentmatrisen direkt: en vanlig knapptryckning ar for
+         * kort och hinner falla mellan tva avlasningar. */
+        char namn[32] = { 0 };
+        unsigned ms = 200;
+        uint8_t pos;
+        const char *komma = strchr(cmd + 5, ',');
+        size_t n = komma ? (size_t)(komma - (cmd + 5)) : strlen(cmd + 5);
+        if (n >= sizeof namn) n = sizeof namn - 1;
+        memcpy(namn, cmd + 5, n);
+        if (komma) ms = (unsigned)strtoul(komma + 1, NULL, 0);
+        if (!host_key_by_name(namn, &pos)) {
+            fprintf(stderr, "okand tangent: %s\n", namn);
+            return -1;
+        }
+        uk101_key_set(&host_mach, pos, 1);
+        host_run_cycles(MS(ms));
+        uk101_key_set(&host_mach, pos, 0);
+        host_run_cycles(MS(40));
     } else if (strncmp(cmd, "load:", 5) == 0) {
         return host_load_program(cmd + 5) ? 1 : -1;
     } else if (strncmp(cmd, "tape:", 5) == 0) {

@@ -279,7 +279,37 @@ börjar med ett radnummer skrivs till filen — annars hade den gett syntaxfel v
 Varvet är verifierat: `kvadrat.bas` in, `SAVE` och `LIST` ut, och den sparade
 filen är byte-identisk med originalet och kör likadant när den läses in igen.
 
-`program\kvadrat.bas` ligger med som exempel.
+## Masken
+
+`program\masken.bas` är ett spel skrivet för maskinen. Släpp filen på fönstret
+och skriv `RUN`. Styr med W A S D, rymden startar en ny omgång.
+
+Den läser skärmgeometrin ur CEGMON istället för att hårdkoda den, så samma fil
+fungerar på både 48- och 64-kolumnersmonitoren:
+
+```basic
+30 W=PEEK(546)+1:B=PEEK(547)+256*PEEK(548)
+40 NR=(PEEK(549)+256*PEEK(550)-B)/64+1
+```
+
+Tre saker den fick lära sig på vägen, alla värda att komma ihåg om du skriver
+egna program:
+
+- **`POKE 530,128` innan tangentmatrisen läses, `POKE 530,0` efter.** BASIC gör
+  en brytkontroll mellan varje sats, och den skriver över radvalet på `$DF00`
+  mellan din `POKE` och din `PEEK`. Utan flaggan läser man alltid fel. Det är
+  därför samma POKE finns i `passetemp.basic`.
+- **`CHR$(12)` är markör hem, inte skärmrensning.** Gammal text ligger kvar. Att
+  POKE:a rent tar tio sekunder i BASIC, så skärmen rensas genom att rullas
+  `NR` rader: CEGMON:s rullning är maskinkod och tar en sekund.
+- **Nästlad `IF ... THEN IF ... THEN` duger inte i 8K-BASIC.** Den ger syntaxfel
+  först när grenen faktiskt körs, vilket kan dröja länge. Använd `AND` med
+  uttryckliga parenteser istället.
+
+Kollisioner testas genom att läsa skärmen med `PEEK`: allt som inte är ett
+blanksteg dödar, utom maten. Då behövs ingen genomsökning av kroppen.
+
+`program\kvadrat.bas` ligger med som mindre exempel.
 
 ## Köra den skriptade riggen
 
@@ -299,6 +329,7 @@ cd host
 | `type:TEXT` | skriver text via tangentmatrisen, `~` betyder RETURN |
 | `key:NAMN` | trycker en enskild tangent, t.ex. `key:C`, `key:RETURN`, `key:RUBOUT` |
 | `shift:NAMN` | samma med shift nere |
+| `hold:NAMN,MS` | håller en tangent nere MS millisekunder |
 | `load:FIL` | läser in ett program: band i, LOAD, reset, varmstart |
 | `save:FIL` | skriver det inspelade till fil |
 | `tape:FIL` | lägger bara i bandet, utan att skriva LOAD |

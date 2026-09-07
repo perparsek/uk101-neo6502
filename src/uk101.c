@@ -40,6 +40,28 @@ void uk101_init(uk101_t *m, const uint8_t *basic8k, const uint8_t *cegmon2k,
     m->acia_ctrl = 0;
     m->acia_rx = 0;
     m->acia_rx_full = 0;
+    m->acia_tx = 0;
+    m->acia_tx_user = 0;
+    uk101_tape_eject(m);
+}
+
+void uk101_tape_insert(uk101_t *m, const uint8_t *data, uint32_t len)
+{
+    m->tape = data;
+    m->tape_len = len;
+    m->tape_pos = 0;
+}
+
+void uk101_tape_eject(uk101_t *m)
+{
+    m->tape = 0;
+    m->tape_len = 0;
+    m->tape_pos = 0;
+}
+
+int uk101_tape_at_end(const uk101_t *m)
+{
+    return !m->tape || m->tape_pos >= m->tape_len;
 }
 
 void uk101_keys_clear(uk101_t *m)
@@ -71,15 +93,31 @@ static uint8_t kbd_read(const uk101_t *m)
     return result;
 }
 
+/* Finns det en byte att läsa? Antingen en inmatad, eller nästa på bandet.
+ *
+ * Bandet behöver ingen takthållning. En riktig UART kan tappa tecken om
+ * processorn är för sen, men här sätts RDRF bara när maskinen faktiskt frågar
+ * och det finns data, så ingenting kan gå förlorat. Därför spelar det ingen
+ * roll att bandet matas fram fortare än 300 baud. */
+static int acia_has_rx(const uk101_t *m)
+{
+    return m->acia_rx_full || (m->tape && m->tape_pos < m->tape_len);
+}
+
 static uint8_t acia_read(uk101_t *m, uint16_t addr)
 {
     if (addr & 1) {                 /* datamottagning */
-        m->acia_rx_full = 0;
-        return m->acia_rx;
+        if (m->acia_rx_full) {
+            m->acia_rx_full = 0;
+            return m->acia_rx;
+        }
+        if (m->tape && m->tape_pos < m->tape_len)
+            return m->tape[m->tape_pos++];
+        return 0;
     }
     /* Statusregister: TDRE alltid satt, annars ligger utmatningen och snurrar.
-     * RDRF sätts bara när något faktiskt matats in. */
-    return (uint8_t)(0x02 | (m->acia_rx_full ? 0x01 : 0x00));
+     * RDRF när det finns något att hämta. */
+    return (uint8_t)(0x02 | (acia_has_rx(m) ? 0x01 : 0x00));
 }
 
 uint8_t uk101_read(uk101_t *m, uint16_t addr)
@@ -99,8 +137,8 @@ void uk101_write(uk101_t *m, uint16_t addr, uint8_t data)
         case UK101_PAGE_RAM:  m->mem[addr] = data; break;
         case UK101_PAGE_KBD:  m->kbd_row = data;   break;
         case UK101_PAGE_ACIA:
-            if (!(addr & 1)) m->acia_ctrl = data;
-            /* Sänd data kastas: v1 har ingen kassett eller serieport. */
+            if (!(addr & 1)) m->acia_ctrl = data;      /* kontrollregister */
+            else if (m->acia_tx) m->acia_tx(m->acia_tx_user, data);
             break;
         default: break;  /* ROM och öppen buss sväljer skrivningen */
     }

@@ -194,6 +194,9 @@ för varmstart eller `M` för monitorn. Processorn går i originalets 1 MHz.
 | Caps Lock | växlar Shift Lock |
 | F11 | kallstartar BASIC direkt, förbi prompten |
 | F12 | reset |
+| F9 | sparar det du spelat in med SAVE och LIST |
+
+**Släpp en `.bas`-fil på fönstret** för att läsa in ett program. Se nedan.
 
 Tangentbordet går via SDL:s textinmatning, inte via scankoder. Det tecken din
 layout faktiskt ger är det som slås upp i UK101:ans tabell, så ett svenskt
@@ -202,6 +205,39 @@ Gemener versaliseras, eftersom BASIC bara förstår versaler.
 
 `SDL2.dll` läggs bredvid exe-filen av byggskriptet, så programmet går att köra
 utan MSYS2 i PATH.
+
+## Ladda in och spara program
+
+UK101:ans "kassett" är ingen ljudinspelning utan ren ASCII genom ACIA:n på
+`$F000/$F001`. BASIC:ens `LOAD` växlar bara inmatningskällan från tangentbordet
+till serieporten, så ett bandat program **är** sin egen listning. Det betyder att
+vilken textfil som helst med numrerade BASIC-rader duger.
+
+Släpp filen på fönstret, eller kör:
+
+```powershell
+.\uk101host.exe --roms ..\roms boot load:..\program\kvadrat.bas "type:RUN~" wait:3000 dump
+```
+
+`load:` gör hela originalets manöver: lägger i bandet, skriver `LOAD`, matar fram
+bandet, och tar sedan RESET följt av `W`. Reset behövs för att `LOAD` växlar
+inmatningen till ACIA:n och **aldrig växlar tillbaka av sig själv** — trycker du
+på tangenter efter en `LOAD` händer ingenting. `W` är varmstart, som lämnar det
+inlästa programmet i minnet. Så gjorde man 1979 också.
+
+Radslut normaliseras vid inläsning, så både CRLF-filer från Windows och LF-filer
+fungerar.
+
+Åt andra hållet: skriv `SAVE`, sedan `LIST`, och tryck **F9** i fönstret (eller
+`save:fil.bas` i riggen). Allt BASIC skickar till bandet spelas in. Inspelningen
+innehåller även själva `LIST`-kommandot och `OK`-prompterna, så bara rader som
+börjar med ett radnummer skrivs till filen — annars hade den gett syntaxfel vid
+återinläsning.
+
+Varvet är verifierat: `kvadrat.bas` in, `SAVE` och `LIST` ut, och den sparade
+filen är byte-identisk med originalet och kör likadant när den läses in igen.
+
+`program\kvadrat.bas` ligger med som exempel.
 
 ## Köra den skriptade riggen
 
@@ -221,6 +257,10 @@ cd host
 | `type:TEXT` | skriver text via tangentmatrisen, `~` betyder RETURN |
 | `key:NAMN` | trycker en enskild tangent, t.ex. `key:C`, `key:RETURN`, `key:RUBOUT` |
 | `shift:NAMN` | samma med shift nere |
+| `load:FIL` | läser in ett program: band i, LOAD, reset, varmstart |
+| `save:FIL` | skriver det inspelade till fil |
+| `tape:FIL` | lägger bara i bandet, utan att skriva LOAD |
+| `eject` | tar ut bandet |
 | `dump` | skriver ut skärmen, 64x16 |
 | `calibrate` | mäter om vilket tecken varje position ger |
 | `keys` | listar tangentnamn och matrisposition |
@@ -323,8 +363,9 @@ i `tools\`, ligger under MIT.
 Utanför v1, i den ordning de är värda att ta:
 
 - **Kör på hårdvara.** Allt i `pico\` är oprövat.
-- **LOAD och SAVE.** ACIA:n svarar korrekt men kastar det som sänds. En riktig
-  kassett vore `.tap`-filer mot USB eller SD, via firmwarens filsystem.
+- **LOAD och SAVE på kortet.** Bandspelaren finns i maskinmodellen och fungerar
+  på PC. På Neo6502 återstår att koppla den till USB eller SD via firmwarens
+  filsystem, så att `LOAD` läser en fil från minnespinnen.
 - **Ljud.** Neo6502 har en ljudpinne, UK101 hade ingen. Rimligast är att lämna det.
 - **CEGMON:s 32-kolumnsläge.** Monitorn kan visa smalare skärm. Nu ritas alltid
   64x16.

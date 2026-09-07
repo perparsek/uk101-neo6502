@@ -32,6 +32,29 @@ void host_tap(uint8_t pos, int shift);
  * skriver till stderr om något tecken inte finns på UK101-tangentbordet. */
 int host_type(const char *s);
 
+/* Lägger en fil i bandspelaren. Radslut normaliseras till CR, så både
+ * CRLF-filer från Windows och LF-filer fungerar. Returnerar 0 vid fel. */
+int  host_tape_load(const char *path);
+void host_tape_eject(void);
+
+/* Läser in ett program och lämnar tillbaka tangentbordet.
+ *
+ * Gör hela originalets manöver: lägger i bandet, skriver LOAD, matar fram
+ * bandet, och tar sedan RESET följt av W. Reset behövs eftersom BASIC:ens LOAD
+ * växlar inmatningen till ACIA:n och aldrig växlar tillbaka av sig själv, och W
+ * är varmstart, som lämnar det inlästa programmet i minnet.
+ *
+ * Efteråt står maskinen vid OK-prompten med programmet laddat. Returnerar 0
+ * vid fel. */
+int host_load_program(const char *path);
+
+/* Allt BASIC skickar till bandet spelas in i en buffert. host_tape_save skriver
+ * bufferten till fil och nollar den. Arbetsgången på maskinen är SAVE, sedan
+ * LIST, och sedan den här. Returnerar 0 vid fel eller om inget spelats in. */
+void host_recorder_start(void);
+int  host_tape_save(const char *path);
+long host_tape_recorded(void);
+
 /* Kallstartar BASIC: väntar in CEGMON-prompten, trycker C och svarar blankt på
  * MEMORY SIZE och TERMINAL WIDTH. */
 void host_cold_start_basic(void);

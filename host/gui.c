@@ -81,6 +81,31 @@ static int type_char(char ch)
     return 1;
 }
 
+/* ---- spara det inspelade -------------------------------------------- */
+
+/* Inget filväljardialog, så filnamnet räknas upp: uk101-001.bas och framåt.
+ * Sökvägen skrivs till konsolen. */
+static void save_next_free(void)
+{
+    char namn[64];
+    int n;
+
+    if (host_tape_recorded() == 0) {
+        printf("inget inspelat. Skriv SAVE och sedan LIST forst, "
+               "sedan F9.\n");
+        fflush(stdout);
+        return;
+    }
+    for (n = 1; n < 1000; n++) {
+        FILE *f;
+        snprintf(namn, sizeof namn, "uk101-%03d.bas", n);
+        f = fopen(namn, "rb");
+        if (!f) break;
+        fclose(f);
+    }
+    host_tape_save(namn);
+}
+
 /* ---- interaktiv loop ------------------------------------------------- */
 
 static int interactive(void)
@@ -109,6 +134,7 @@ static int interactive(void)
     if (!tex) { fprintf(stderr, "SDL_CreateTexture: %s\n", SDL_GetError()); return 1; }
 
     SDL_StartTextInput();
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     printf("\nUK101 kor. Tryck C vid CEGMON-prompten for att kallstarta BASIC,\n"
            "eller W for varmstart, M for monitorn.\n"
@@ -116,7 +142,11 @@ static int interactive(void)
            "  Ctrl+C     bryter ett BASIC-program\n"
            "  Caps Lock  vaxlar Shift Lock\n"
            "  F12        reset\n"
-           "  F11        kallstartar BASIC direkt\n\n");
+           "  F11        kallstartar BASIC direkt\n"
+           "  F9         sparar det du spelat in med SAVE och LIST\n"
+           "\n"
+           "Slapp en .bas-fil pa fonstret for att lasa in ett program.\n"
+           "Spara ett: skriv SAVE, sedan LIST, och tryck F9.\n\n");
     fflush(stdout);
 
     while (running) {
@@ -133,6 +163,18 @@ static int interactive(void)
             case SDL_TEXTINPUT: {
                 const char *p;
                 for (p = e.text.text; *p; p++) type_char(*p);
+                break;
+            }
+
+            /* Slapper man en fil pa fonstret gor den hela originalets manover:
+             * LOAD, mata fram bandet, RESET och varmstart. Efterat star
+             * maskinen vid OK med programmet i minnet. */
+            case SDL_DROPFILE: {
+                char *path = e.drop.file;
+                if (path) {
+                    host_load_program(path);
+                    SDL_free(path);
+                }
                 break;
             }
 
@@ -156,6 +198,9 @@ static int interactive(void)
                     break;
                 case SDLK_F11:
                     host_cold_start_basic();
+                    break;
+                case SDLK_F9:
+                    save_next_free();
                     break;
                 default:
                     /* CTRL+bokstav ger ingen textinmatning, sa den fangas har. */

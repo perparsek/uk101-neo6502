@@ -10,6 +10,7 @@
 /host/SDL2.dll
 /host/*.bmp
 /host/*.png
+/host/uk101-*.bas
 *.o
 *.obj
 *.elf

@@ -85,6 +85,7 @@ const uint8_t *host_boot(const char *rom_dir, uint32_t ram_size)
 
     uk101_init(&host_mach, basic, cegmon, ram_size);
     pins = m6502_init(&cpu, &(m6502_desc_t){ 0 });
+    host_recorder_start();      /* bandet spelar in fran start */
 
     free(basic);
     free(cegmon);
@@ -127,6 +128,181 @@ void host_tap(uint8_t pos, int shift)
     host_run_cycles(MS(40));
 }
 
+/* ---- bandspelaren ---------------------------------------------------- */
+
+/* Bandet måste leva så länge det sitter i, så bufferten ägs här och inte i
+ * maskinmodellen. */
+static uint8_t *tape_buf;
+
+int host_tape_load(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    long size;
+    size_t got, i, n;
+    uint8_t *raw;
+
+    if (!f) {
+        fprintf(stderr, "kan inte oppna %s\n", path);
+        return 0;
+    }
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size <= 0) {
+        fprintf(stderr, "%s ar tom\n", path);
+        fclose(f);
+        return 0;
+    }
+    raw = malloc((size_t)size);
+    got = fread(raw, 1, (size_t)size, f);
+    fclose(f);
+
+    /* Normalisera radslut till CR: UK101 forvantar sig CR, och ett extra LF
+     * hade blivit ett tecken for mycket i BASIC:ens inmatningsbuffert. */
+    free(tape_buf);
+    tape_buf = malloc(got ? got : 1);
+    n = 0;
+    for (i = 0; i < got; i++) {
+        uint8_t ch = raw[i];
+        if (ch == 0x0D) {
+            tape_buf[n++] = 0x0D;
+            if (i + 1 < got && raw[i + 1] == 0x0A) i++;   /* CRLF -> CR */
+        } else if (ch == 0x0A) {
+            tape_buf[n++] = 0x0D;                          /* LF -> CR   */
+        } else {
+            tape_buf[n++] = ch;
+        }
+    }
+    free(raw);
+
+    uk101_tape_insert(&host_mach, tape_buf, (uint32_t)n);
+    printf("band i: %s, %lu tecken\n", path, (unsigned long)n);
+    fflush(stdout);
+    return 1;
+}
+
+void host_tape_eject(void)
+{
+    uk101_tape_eject(&host_mach);
+    free(tape_buf);
+    tape_buf = 0;
+}
+
+int host_load_program(const char *path)
+{
+    int varv;
+
+    if (!host_tape_load(path)) return 0;
+
+    host_type("LOAD");
+    host_tap(UK101_KEY_RETURN, 0);
+
+    /* Mata fram bandet. Det konsumeras i takt med att BASIC frågar efter
+     * tecken, så det är klart när bandet är slut. Taket är en säkring mot ett
+     * program som av någon anledning slutar läsa. */
+    for (varv = 0; varv < 400 && !uk101_tape_at_end(&host_mach); varv++)
+        host_run_cycles(MS(10));
+
+    if (!uk101_tape_at_end(&host_mach)) {
+        fprintf(stderr, "bandet lastes inte klart, %lu av %lu tecken kvar\n",
+                (unsigned long)(host_mach.tape_len - host_mach.tape_pos),
+                (unsigned long)host_mach.tape_len);
+        return 0;
+    }
+
+    host_run_cycles(MS(200));       /* sista raden hinner tokeniseras */
+    host_tape_eject();
+
+    host_reset();                   /* LOAD slapper inte inmatningen sjalv */
+    host_run_cycles(MS(400));
+    host_tap(UK101_KEY(4, 7), 0);   /* W = varmstart, programmet ligger kvar */
+    host_run_cycles(MS(400));
+
+    printf("program inlast, maskinen star vid OK\n");
+    fflush(stdout);
+    return 1;
+}
+
+/* ---- inspelning ------------------------------------------------------ */
+
+static uint8_t *rec_buf;
+static long rec_len, rec_cap;
+
+static void rec_byte(void *user, uint8_t byte)
+{
+    (void)user;
+    if (rec_len == rec_cap) {
+        long ny = rec_cap ? rec_cap * 2 : 4096;
+        uint8_t *p = realloc(rec_buf, (size_t)ny);
+        if (!p) return;                     /* full buffert, tappa tecknet */
+        rec_buf = p;
+        rec_cap = ny;
+    }
+    rec_buf[rec_len++] = byte;
+}
+
+void host_recorder_start(void)
+{
+    host_mach.acia_tx = rec_byte;
+    host_mach.acia_tx_user = 0;
+}
+
+long host_tape_recorded(void)
+{
+    return rec_len;
+}
+
+int host_tape_save(const char *path)
+{
+    FILE *f;
+    long i;
+
+    if (rec_len == 0) {
+        fprintf(stderr, "inget inspelat. Skriv SAVE och sedan LIST forst.\n");
+        return 0;
+    }
+    f = fopen(path, "wb");
+    if (!f) {
+        fprintf(stderr, "kan inte skriva %s\n", path);
+        return 0;
+    }
+    /* Inspelningen innehaller allt BASIC ekade ut, alltsa ocksa sjalva
+     * LIST-kommandot och OK-prompterna. Bara rader som borjar med ett
+     * radnummer skrivs, sa att filen gar att lasa in igen utan syntaxfel.
+     * Radslut blir CRLF sa filen gar att oppna i en Windows-editor. */
+    {
+        char rad[256];
+        size_t len = 0;
+        long rader = 0;
+        for (i = 0; i <= rec_len; i++) {
+            int slut = (i == rec_len) || (rec_buf[i] == 0x0D);
+            if (!slut) {
+                uint8_t ch = rec_buf[i];
+                if (ch >= 0x20 && ch < 0x7F && len < sizeof rad - 1)
+                    rad[len++] = (char)ch;
+                continue;
+            }
+            rad[len] = '\0';
+            {
+                char *p = rad;
+                while (*p == ' ') p++;                  /* LIST inleder med blanksteg */
+                if (*p >= '0' && *p <= '9') {
+                    fputs(p, f);
+                    fputs("\r\n", f);
+                    rader++;
+                }
+            }
+            len = 0;
+        }
+        fclose(f);
+        printf("sparade %s, %ld rader ur %ld inspelade tecken\n",
+               path, rader, rec_len);
+        fflush(stdout);
+        rec_len = 0;
+        return rader > 0;
+    }
+}
+
 void host_cold_start_basic(void)
 {
     host_run_cycles(MS(500));
@@ -155,6 +331,14 @@ int host_command(const char *cmd)
         host_tap(pos, shift);
     } else if (strcmp(cmd, "boot") == 0) {
         host_cold_start_basic();
+    } else if (strncmp(cmd, "load:", 5) == 0) {
+        return host_load_program(cmd + 5) ? 1 : -1;
+    } else if (strncmp(cmd, "tape:", 5) == 0) {
+        return host_tape_load(cmd + 5) ? 1 : -1;
+    } else if (strncmp(cmd, "save:", 5) == 0) {
+        return host_tape_save(cmd + 5) ? 1 : -1;
+    } else if (strcmp(cmd, "eject") == 0) {
+        host_tape_eject();
     } else if (strcmp(cmd, "reset") == 0) {
         host_reset();
     } else {

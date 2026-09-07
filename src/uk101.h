@@ -39,6 +39,21 @@ typedef struct {
     uint8_t acia_ctrl;
     uint8_t acia_rx;
     uint8_t acia_rx_full;
+
+    /* Kassettspelaren. Ett UK101-program på "band" är ren ASCII: CEGMON:s LOAD
+     * växlar bara inmatningskällan från tangentbordet till ACIA:n, så BASIC ser
+     * listningen som om den skrevs in. Radslut ska vara CR.
+     *
+     * tape = NULL betyder att inget band ligger i. Modellen äger inte minnet. */
+    const uint8_t *tape;
+    uint32_t tape_len;
+    uint32_t tape_pos;
+
+    /* Utmatningen till bandet. BASIC:ens SAVE växlar utmatningen till ACIA:n,
+     * och en LIST efter det skickar listningen dit. Den som vill spela in
+     * hakar på här. Kan vara NULL. */
+    void (*acia_tx)(void *user, uint8_t byte);
+    void *acia_tx_user;
 } uk101_t;
 
 /* ram_size = arbets-RAM i byte från $0000. Originalet hade 4K eller 8K.
@@ -62,6 +77,12 @@ void    uk101_write(uk101_t *m, uint16_t addr, uint8_t data);
 
 void uk101_key_set(uk101_t *m, uint8_t pos, int down);
 void uk101_keys_clear(uk101_t *m);
+
+/* Lägger i ett band. Minnet måste leva så länge bandet sitter i, modellen
+ * kopierar inte. Radslut i data ska vara CR. */
+void uk101_tape_insert(uk101_t *m, const uint8_t *data, uint32_t len);
+void uk101_tape_eject(uk101_t *m);
+int  uk101_tape_at_end(const uk101_t *m);
 
 /* Läser ett tecken ur skärm-RAM. Teckenkoderna är ASCII i intervallet
  * $20-$5F, vilket är varför monitorn kan lägga in text direkt. */

@@ -6,6 +6,9 @@
 # Byggresultat
 /pico/build/
 /host/uk101host.exe
+/host/uk101gui.exe
+/host/SDL2.dll
+/host/*.bmp
 *.o
 *.obj
 *.elf

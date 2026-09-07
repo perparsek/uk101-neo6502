@@ -33,11 +33,30 @@ if ($Bara -ne 'host') {
 }
 
 if ($Bara -ne 'pico') {
-    Write-Host '== vardharness' -ForegroundColor Cyan
+    $flaggor = @('-O2', '-std=c11', '-Wall', '-Wextra', "-I$rot\src")
+    $delat = @("$rot\host\hostbus.c", "$rot\src\uk101.c")
+
+    Write-Host '== uk101host.exe (skriptad rigg)' -ForegroundColor Cyan
     $ut = "$rot\host\uk101host.exe"
-    & gcc -O2 -std=c11 -Wall -Wextra -o $ut "$rot\host\main.c" "$rot\src\uk101.c"
-    if ($LASTEXITCODE -ne 0) { throw 'gcc misslyckades' }
+    & gcc @flaggor -o $ut "$rot\host\main.c" @delat
+    if ($LASTEXITCODE -ne 0) { throw 'gcc misslyckades for uk101host' }
     Write-Host "   $ut" -ForegroundColor Green
+
+    # Det interaktiva fonstret kraver SDL2. Saknas den byggs bara riggen.
+    Write-Host '== uk101gui.exe (interaktivt fonster)' -ForegroundColor Cyan
+    $sdlDll = "$ucrt\SDL2.dll"
+    if (-not (Test-Path $sdlDll)) {
+        Write-Host '   SDL2 saknas, hoppar over. Installera med:' -ForegroundColor Yellow
+        Write-Host '   pacman -S mingw-w64-ucrt-x86_64-SDL2' -ForegroundColor Yellow
+    } else {
+        $sdlFlaggor = (& pkg-config --cflags --libs sdl2) -split '\s+' | Where-Object { $_ }
+        $ut = "$rot\host\uk101gui.exe"
+        & gcc @flaggor -o $ut "$rot\host\gui.c" @delat @sdlFlaggor
+        if ($LASTEXITCODE -ne 0) { throw 'gcc misslyckades for uk101gui' }
+        # DLL:en bredvid exe-filen, sa den kan koras utan MSYS2 i PATH.
+        Copy-Item $sdlDll "$rot\host\SDL2.dll" -Force
+        Write-Host "   $ut" -ForegroundColor Green
+    }
 }
 
 if ($Bara -ne 'host') {

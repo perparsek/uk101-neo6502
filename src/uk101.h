@@ -67,4 +67,15 @@ void uk101_keys_clear(uk101_t *m);
  * $20-$5F, vilket är varför monitorn kan lägga in text direkt. */
 uint8_t uk101_screen_char(const uk101_t *m, int row, int col);
 
+/* Hämtar en pixelrad ur teckengeneratorn: 8 pixlar, bit 7 längst till vänster.
+ * ROM:et adresseras teckenkod*8 + rad, precis som videokretsen gör det.
+ *
+ * Både pico-firmwaren och det grafiska värdfönstret går genom den här, så det
+ * som syns på PC är samma avkodning som kortet gör. */
+static inline uint8_t uk101_glyph_row(const uint8_t *chargen, uint8_t ch,
+                                      uint8_t line)
+{
+    return chargen[((uint16_t)ch << 3) | (line & 7)];
+}
+
 #endif /* UK101_H */

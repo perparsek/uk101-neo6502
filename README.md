@@ -8,12 +8,24 @@ en 64 KB-array i sitt eget RAM. Det gör en UK101 nästan gratis: maskinen är
 6502 + 1 KB skärm-RAM + tangentmatris + ACIA, och allt utom matrisen är ren
 minnesåtkomst.
 
+![UK101 kallstartar](images/boot.png)
+
+Bilden är inte fotograferad, den är renderad av `uk101gui.exe` genom
+originalets teckengenerator.
+
 Projektet har två byggmål som delar samma maskinmodell:
 
 | Mål | Vad | Läge |
 |-----|-----|------|
 | `host\` | UK101-modellen mot en **emulerad** 6502, körs på PC | verifierad, se nedan |
 | `pico\` | UK101-modellen mot den **riktiga** 65C02:an på Neo6502 | bygger, ej körd på hårdvara |
+
+Värdmålet ger två program:
+
+| Program | Vad |
+|---------|-----|
+| `uk101gui.exe` | interaktiv maskin i ett fönster, riktiga pixlar ur teckengeneratorn |
+| `uk101host.exe` | skriptad provrigg, headless, skriver ut skärmen som text |
 
 Poängen med uppdelningen är att `src\uk101.c` är exakt samma kod i båda. Minneskarta,
 ROM-skydd, ACIA och tangentmatris är alltså verifierade på PC innan de rör hårdvara.
@@ -40,9 +52,17 @@ program körs:
 14  |            OK                                                  |
 ```
 
+Teckenavkodningen är verifierad på riktiga pixlar, inte bara som text.
+`uk101gui.exe --shot fil.bmp` renderar utan att öppna fönster, vilket gör att
+bilden går att granska. Både fönstret och pico-firmwaren går genom samma
+`uk101_glyph_row()` i `src\uk101.h`, så det som syns på PC är samma avkodning
+som kortet gör.
+
 **Ej verifierat.** Pico-firmwaren kompilerar och länkar men har aldrig körts på
-ett kort. DVI-uppsättning, USB-tangentbord och PIO-klockdelaren är skrivna efter
-Neo6502-firmwarens och PicoDVI:s egna, beprövade kod, men de är inte provade här.
+ett kort. DVI-uppsättningen, USB-tangentbordet och PIO-klockdelaren är skrivna
+efter Neo6502-firmwarens och PicoDVI:s egna, beprövade kod, men de är inte
+provade här. Det som *är* prövat av firmwarens innehåll är maskinmodellen och
+teckenavkodningen, alltså det som delas med värdmålet.
 
 ## Fällan som är värd att känna till
 
@@ -114,8 +134,11 @@ USB-tangentbord får du `"` på UK101:an, oavsett var den låg 1979.
 Förutsätter MSYS2 i `C:\msys64`. Verktygen installeras med
 
 ```powershell
-C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-arm-none-eabi-gcc mingw-w64-ucrt-x86_64-arm-none-eabi-newlib
+C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-arm-none-eabi-gcc mingw-w64-ucrt-x86_64-arm-none-eabi-newlib mingw-w64-ucrt-x86_64-SDL2
 ```
+
+SDL2 behövs bara till det interaktiva fönstret. Saknas den byggs resten ändå,
+byggskriptet hoppar över `uk101gui.exe` och säger till.
 
 Hämta beroendena, pico-sdk och PicoDVI, till `vendor\`:
 
@@ -154,10 +177,37 @@ firmwaren, `-Ren` river byggkatalogen först.
 
   Kommer en `pacman -Syu` och uppgraderar tillbaka, gör om nedgraderingen.
 
-## Köra värdharnesset
+## Köra maskinen på PC
 
-`host\uk101host.exe` kör maskinen headless och skriver ut skärm-RAM:et som text.
-Kommandona körs i ordning.
+```powershell
+cd host
+.\uk101gui.exe --roms ..\roms
+```
+
+Ett fönster öppnas med CEGMON-prompten. Tryck `C` för att kallstarta BASIC, `W`
+för varmstart eller `M` för monitorn. Processorn går i originalets 1 MHz.
+
+| Tangent | Gör |
+|---------|-----|
+| Backsteg | RUBOUT |
+| Ctrl+C | bryter ett BASIC-program som kör |
+| Caps Lock | växlar Shift Lock |
+| F11 | kallstartar BASIC direkt, förbi prompten |
+| F12 | reset |
+
+Tangentbordet går via SDL:s textinmatning, inte via scankoder. Det tecken din
+layout faktiskt ger är det som slås upp i UK101:ans tabell, så ett svenskt
+Shift+2 blir ett `"` på UK101:an oavsett var det låg på originalets tangentbord.
+Gemener versaliseras, eftersom BASIC bara förstår versaler.
+
+`SDL2.dll` läggs bredvid exe-filen av byggskriptet, så programmet går att köra
+utan MSYS2 i PATH.
+
+## Köra den skriptade riggen
+
+`uk101host.exe` kör maskinen headless och skriver ut skärm-RAM:et som text. Det
+är den som användes för att verifiera maskinmodellen, och den som mäter upp
+tangenttabellen. Kommandona körs i ordning.
 
 ```powershell
 cd host
@@ -175,8 +225,16 @@ cd host
 | `calibrate` | mäter om vilket tecken varje position ger |
 | `keys` | listar tangentnamn och matrisposition |
 
-Flaggan `--ram BYTE` ändrar arbets-RAM. Med `--ram 4096` får du 3327 bytes free,
-med standardvärdet 8192 får du 7423, precis som en påbyggd UK101.
+Båda programmen tar `--ram BYTE`, som ändrar arbets-RAM. Med `--ram 4096` får du
+3327 bytes free, med standardvärdet 8192 får du 7423, precis som en påbyggd
+UK101.
+
+`uk101gui.exe` tar samma kommandon, och kör dem innan fönstret öppnas. Med
+`--shot fil.bmp` öppnas inget fönster alls, kommandona körs och bilden sparas:
+
+```powershell
+.\uk101gui.exe --roms ..\roms --shot boot.bmp boot
+```
 
 ## Flasha kortet
 
@@ -196,12 +254,16 @@ Sätt den till `1.0f` om du vill köra kortet så fort det går.
 
 ```
 roms\           basic.rom, cegmon.rom, chargen.rom
+images\boot.png skärmbilden ovan, renderad av uk101gui
 src\
   uk101.h/.c    maskinmodellen, plattformsoberoende, delas av båda målen
   uk101_keys.h  ASCII till matrisposition, uppmätt
   uk101_roms.h  genererad, ROM-bilderna som C-arrayer
-  vendor\m6502.h  6502-kärna för värdharnesset (Andre Weissflog, zlib)
-host\main.c     värdharness, bussloop mot emulerad CPU + terminalutskrift
+  vendor\m6502.h  6502-kärna för värdmålet (Andre Weissflog, zlib)
+host\
+  hostbus.h/.c  bussloop mot emulerad CPU, ROM-inläsning, kommandotolk
+  gui.c         uk101gui.exe, interaktivt SDL2-fönster + --shot
+  main.c        uk101host.exe, skriptad rigg, skärmdump som text, calibrate
 pico\
   main.c        firmware: DVI på core1, bussloop på core0, USB-tangentbord
   uk101_bus.pio PIO-program för 65C02-bussen, från Neo6502-firmwaren
@@ -242,9 +304,9 @@ vendor\         pico-sdk, PicoDVI, referensfiler ur Neo6502-firmwaren
 
 ## Licens
 
-Koden som är skriven för det här projektet, alltså `src\uk101.h`, `src\uk101.c`,
-`src\uk101_keys.h`, `host\main.c`, `pico\main.c`, `pico\tusb_config.h` och
-skripten i `tools\`, ligger under MIT.
+Koden som är skriven för det här projektet, alltså allt i `src\` utom
+`src\vendor\`, allt i `host\`, `pico\main.c`, `pico\tusb_config.h` och skripten
+i `tools\`, ligger under MIT.
 
 Övrigt behåller sina egna villkor:
 

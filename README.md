@@ -262,6 +262,8 @@ cd host
 | `tape:FIL` | lägger bara i bandet, utan att skriva LOAD |
 | `eject` | tar ut bandet |
 | `dump` | skriver ut skärmen, 64x16 |
+| `mem:ADR,N` | hexdump av N byte från ADR, adressen i hex |
+| `zp` | hexdump av nollsidan |
 | `calibrate` | mäter om vilket tecken varje position ger |
 | `keys` | listar tangentnamn och matrisposition |
 

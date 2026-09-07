@@ -33,6 +33,31 @@ static void dump_screen(const char *title)
     printf("+\n");
 }
 
+/* ---- minnesdump ------------------------------------------------------ */
+
+/* Läser genom uk101_read, alltså samma väg som processorn ser minnet.
+ * Tangentbord och ACIA har sidoeffekter vid läsning, så de hoppas över. */
+static void dump_mem(uint16_t addr, int len)
+{
+    int i;
+    printf("\n%04X..%04X\n", addr, (unsigned)(addr + len - 1) & 0xFFFF);
+    for (i = 0; i < len; i += 16) {
+        int j, n = (len - i < 16) ? len - i : 16;
+        printf("  %04X  ", (unsigned)(addr + i) & 0xFFFF);
+        for (j = 0; j < 16; j++) {
+            if (j < n) printf("%02X ", host_mach.mem[(addr + i + j) & 0xFFFF]);
+            else       printf("   ");
+            if (j == 7) putchar(' ');
+        }
+        printf(" |");
+        for (j = 0; j < n; j++) {
+            uint8_t c = host_mach.mem[(addr + i + j) & 0xFFFF];
+            putchar((c >= 0x20 && c < 0x7F) ? (char)c : '.');
+        }
+        printf("|\n");
+    }
+}
+
 /* ---- kalibrering av teckenuppsättningen ------------------------------ */
 
 /* Vilket tecken en fysisk tangent ger är monitorns sak, inte hårdvarans.
@@ -141,7 +166,13 @@ int main(int argc, char **argv)
         if (r < 0) return 1;
         if (r > 0) continue;
 
-        if (strcmp(cmd, "dump") == 0) {
+        if (strncmp(cmd, "mem:", 4) == 0) {
+            unsigned a = 0, n = 64;
+            sscanf(cmd + 4, "%x,%u", &a, &n);
+            dump_mem((uint16_t)a, (int)n);
+        } else if (strcmp(cmd, "zp") == 0) {
+            dump_mem(0x0000, 256);
+        } else if (strcmp(cmd, "dump") == 0) {
             dump_screen("skarm:");
         } else if (strcmp(cmd, "calibrate") == 0) {
             calibrate();

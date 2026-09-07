@@ -258,55 +258,88 @@ long host_tape_recorded(void)
     return rec_len;
 }
 
+/* Går igenom inspelningen rad för rad. Radslut är CR, men LF räknas också, för
+ * säkerhets skull. Callback får varje rad som redan är trimmad från inledande
+ * blanksteg. Returnerar antalet rader som började med ett radnummer.
+ *
+ * Inspelningen innehåller allt BASIC ekade ut, alltså också själva
+ * LIST-kommandot och OK-prompterna. Bara numrerade rader duger, annars ger
+ * filen syntaxfel när den läses in igen. */
+static long rec_walk(FILE *ut)
+{
+    char rad[256];
+    size_t len = 0;
+    long rader = 0, i;
+
+    for (i = 0; i <= rec_len; i++) {
+        int slut = (i == rec_len) || rec_buf[i] == 0x0D || rec_buf[i] == 0x0A;
+        if (!slut) {
+            uint8_t ch = rec_buf[i];
+            if (ch >= 0x20 && ch < 0x7F && len < sizeof rad - 1)
+                rad[len++] = (char)ch;
+            continue;
+        }
+        rad[len] = '\0';
+        len = 0;
+        {
+            char *p = rad;
+            while (*p == ' ') p++;        /* LIST inleder med blanksteg */
+            if (*p >= '0' && *p <= '9') {
+                rader++;
+                if (ut) { fputs(p, ut); fputs("\r\n", ut); }
+            }
+        }
+    }
+    return rader;
+}
+
+/* Visar vad som faktiskt spelades in, när inget kom igenom filtret. Utan den
+ * blir ett misslyckande omöjligt att felsöka. */
+static void rec_visa(void)
+{
+    long i;
+    fprintf(stderr, "  inspelat: \"");
+    for (i = 0; i < rec_len && i < 300; i++) {
+        uint8_t c = rec_buf[i];
+        if (c == 0x0D)                    fprintf(stderr, "\\r");
+        else if (c == 0x0A)               fprintf(stderr, "\\n");
+        else if (c >= 0x20 && c < 0x7F)   fputc(c, stderr);
+        else                              fprintf(stderr, "\\x%02X", c);
+    }
+    fprintf(stderr, "%s\"\n", rec_len > 300 ? " ..." : "");
+}
+
 int host_tape_save(const char *path)
 {
     FILE *f;
-    long i;
+    long rader;
 
     if (rec_len == 0) {
-        fprintf(stderr, "inget inspelat. Skriv SAVE och sedan LIST forst.\n");
+        fprintf(stderr, "inget inspelat. Skriv SAVE, sedan LIST, sedan spara.\n");
         return 0;
     }
+
+    /* Rakna forst. Ingen fil skapas om inget duger, och inspelningen behalls
+     * sa att ett nytt forsok ar mojligt. */
+    rader = rec_walk(NULL);
+    if (rader == 0) {
+        fprintf(stderr, "inga numrerade rader i de %ld inspelade tecknen. "
+                        "Gjorde du LIST efter SAVE?\n", rec_len);
+        rec_visa();
+        return 0;
+    }
+
     f = fopen(path, "wb");
     if (!f) {
         fprintf(stderr, "kan inte skriva %s\n", path);
         return 0;
     }
-    /* Inspelningen innehaller allt BASIC ekade ut, alltsa ocksa sjalva
-     * LIST-kommandot och OK-prompterna. Bara rader som borjar med ett
-     * radnummer skrivs, sa att filen gar att lasa in igen utan syntaxfel.
-     * Radslut blir CRLF sa filen gar att oppna i en Windows-editor. */
-    {
-        char rad[256];
-        size_t len = 0;
-        long rader = 0;
-        for (i = 0; i <= rec_len; i++) {
-            int slut = (i == rec_len) || (rec_buf[i] == 0x0D);
-            if (!slut) {
-                uint8_t ch = rec_buf[i];
-                if (ch >= 0x20 && ch < 0x7F && len < sizeof rad - 1)
-                    rad[len++] = (char)ch;
-                continue;
-            }
-            rad[len] = '\0';
-            {
-                char *p = rad;
-                while (*p == ' ') p++;                  /* LIST inleder med blanksteg */
-                if (*p >= '0' && *p <= '9') {
-                    fputs(p, f);
-                    fputs("\r\n", f);
-                    rader++;
-                }
-            }
-            len = 0;
-        }
-        fclose(f);
-        printf("sparade %s, %ld rader ur %ld inspelade tecken\n",
-               path, rader, rec_len);
-        fflush(stdout);
-        rec_len = 0;
-        return rader > 0;
-    }
+    rec_walk(f);                          /* radslut blir CRLF for Windows */
+    fclose(f);
+    printf("sparade %s, %ld rader\n", path, rader);
+    fflush(stdout);
+    rec_len = 0;
+    return 1;
 }
 
 void host_cold_start_basic(void)

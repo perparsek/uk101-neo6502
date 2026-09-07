@@ -26,6 +26,20 @@
 #define CYCLES_FRAME (CPU_HZ / 60)
 
 static const uint8_t *chargen;
+static SDL_Window *win;
+
+/* Fonstret visar bara UK101:ans skarm, sa besked om inlasning och sparning
+ * far inte plats dar. De hamnar i titelraden istallet. Konsolen duger inte:
+ * startas programmet fran en genvag ser man den aldrig. */
+static void status(const char *text)
+{
+    char rad[256];
+    if (text && *text) snprintf(rad, sizeof rad, "Compukit UK101  -  %s", text);
+    else               snprintf(rad, sizeof rad, "Compukit UK101");
+    if (win) SDL_SetWindowTitle(win, rad);
+    printf("%s\n", text && *text ? text : "");
+    fflush(stdout);
+}
 
 /* ---- rendering ------------------------------------------------------- */
 
@@ -57,8 +71,7 @@ static void set_shift_lock(int on)
 {
     shift_lock = on;
     uk101_key_set(&host_mach, UK101_KEY_SHIFTLOCK, on);
-    printf("shift lock %s\n", on ? "nere (versaler)" : "uppe");
-    fflush(stdout);
+    status(on ? "shift lock nere, versaler" : "shift lock uppe");
 }
 
 /* Trycker en tangent med CTRL nere. BASIC bryter på CTRL+C. */
@@ -87,13 +100,11 @@ static int type_char(char ch)
  * Sökvägen skrivs till konsolen. */
 static void save_next_free(void)
 {
-    char namn[64];
+    char namn[64], besked[128];
     int n;
 
     if (host_tape_recorded() == 0) {
-        printf("inget inspelat. Skriv SAVE och sedan LIST forst, "
-               "sedan F9.\n");
-        fflush(stdout);
+        status("inget att spara. Skriv SAVE, sedan LIST, sedan F9");
         return;
     }
     for (n = 1; n < 1000; n++) {
@@ -103,14 +114,19 @@ static void save_next_free(void)
         if (!f) break;
         fclose(f);
     }
-    host_tape_save(namn);
+    if (host_tape_save(namn))
+        snprintf(besked, sizeof besked, "sparade %s", namn);
+    else
+        snprintf(besked, sizeof besked,
+                 "inget sparat, %ld tecken inspelade men inga numrerade rader",
+                 host_tape_recorded());
+    status(besked);
 }
 
 /* ---- interaktiv loop ------------------------------------------------- */
 
 static int interactive(void)
 {
-    SDL_Window   *win;
     SDL_Renderer *ren;
     SDL_Texture  *tex;
     int running = 1;
@@ -172,7 +188,14 @@ static int interactive(void)
             case SDL_DROPFILE: {
                 char *path = e.drop.file;
                 if (path) {
-                    host_load_program(path);
+                    char besked[256];
+                    const char *namn = strrchr(path, '\\');
+                    namn = namn ? namn + 1 : path;
+                    if (host_load_program(path))
+                        snprintf(besked, sizeof besked, "laste in %s", namn);
+                    else
+                        snprintf(besked, sizeof besked, "kunde inte lasa %s", namn);
+                    status(besked);
                     SDL_free(path);
                 }
                 break;
@@ -193,8 +216,7 @@ static int interactive(void)
                     break;
                 case SDLK_F12:
                     host_reset();
-                    printf("reset\n");
-                    fflush(stdout);
+                    status("reset, tryck F11 for BASIC");
                     break;
                 case SDLK_F11:
                     host_cold_start_basic();

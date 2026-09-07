@@ -1,0 +1,12 @@
+# ROM-bilderna far under inga omstandigheter radslutskonverteras.
+*.rom binary
+
+# PowerShell-skripten har UTF-8 BOM och CRLF med flit: PS 5.1 tolkar annars
+# aao som ANSI och parsern havererar.
+*.ps1 text eol=crlf
+
+*.c    text
+*.h    text
+*.pio  text
+*.py   text
+*.md   text

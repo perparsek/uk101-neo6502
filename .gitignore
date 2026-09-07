@@ -1,0 +1,15 @@
+# Tredjepartsberoenden, hamtas med tools\hamta-beroenden.ps1
+/vendor/pico-sdk/
+/vendor/PicoDVI/
+/vendor/neo6502-ref/
+
+# Byggresultat
+/pico/build/
+/host/uk101host.exe
+*.o
+*.obj
+*.elf
+*.uf2
+
+# Genereras ur roms\*.rom av tools\rom2h.py
+/src/uk101_roms.h

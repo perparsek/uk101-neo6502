@@ -9,6 +9,7 @@
 /host/uk101gui.exe
 /host/SDL2.dll
 /host/*.bmp
+/host/*.png
 *.o
 *.obj
 *.elf
